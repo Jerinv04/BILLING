@@ -37,7 +37,7 @@ const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.r
 // Shared build: persists to a Supabase table (app_data) instead of
 // localStorage, so every device — laptop, phone, another PC — reads and
 // writes the exact same live data. See src/supabaseClient.js.
-import { supabase } from "./supabaseClient";
+import { supabase, isSupabaseConfigured } from "./supabaseClient";
 
 async function loadJSON(key, fallback) {
   try {
@@ -118,6 +118,11 @@ export default function TyreBillingSystem() {
   return (
     <div className="min-h-screen w-full flex bg-[#121417] text-[#E7E5DF]" style={{ fontFamily: "'Inter', sans-serif" }}>
       <FontImports />
+      {!isSupabaseConfigured && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-sm text-center py-2 px-4">
+          Supabase is not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY). Data will not be saved or synced until this is fixed.
+        </div>
+      )}
       <Sidebar tab={tab} setTab={setTab} shopName={settings.name} />
       <main className="flex-1 min-w-0">
         {tab === "invoice" && (
