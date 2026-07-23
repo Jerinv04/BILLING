@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Pencil, Receipt, LayoutDashboard, Package, Users, History,
   Settings as SettingsIcon, AlertTriangle, TrendingUp, QrCode, Search, Phone,
   CreditCard, Wallet, Landmark, Smartphone, CalendarClock, ChevronRight,
-  CheckCircle2, Gauge, X, Save, Loader2, Inbox
+  CheckCircle2, Gauge, X, Save, Loader2, Inbox, LogOut, Lock
 } from "lucide-react";
 
 /* =========================================================================
@@ -61,6 +61,10 @@ async function saveJSON(key, value) {
 }
 
 export default function TyreBillingSystem() {
+  // undefined = still checking for an existing session, null = logged out,
+  // object = logged in. Gates data loading below so nothing is fetched
+  // before we know whether the user is authenticated.
+  const [session, setSession] = useState(undefined);
   const [tab, setTab] = useState("invoice");
   const [loading, setLoading] = useState(true);
 
@@ -69,6 +73,12 @@ export default function TyreBillingSystem() {
   const [customers, setCustomers] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [counter, setCounter] = useState(1);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   const loadAll = useCallback(async () => {
     const [s, p, c, inv, cnt] = await Promise.all([
@@ -82,6 +92,7 @@ export default function TyreBillingSystem() {
   }, []);
 
   useEffect(() => {
+    if (!session) return;
     (async () => {
       await loadAll();
       setLoading(false);
@@ -96,7 +107,7 @@ export default function TyreBillingSystem() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [loadAll]);
+  }, [loadAll, session]);
 
   const persist = {
     settings: async (v) => { setSettings(v); await saveJSON(KEYS.settings, v); },
@@ -105,6 +116,24 @@ export default function TyreBillingSystem() {
     invoices: async (v) => { setInvoices(v); await saveJSON(KEYS.invoices, v); },
     counter: async (v) => { setCounter(v); await saveJSON(KEYS.counter, v); },
   };
+
+  if (session === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#121417] text-white/60">
+        <FontImports />
+        <Loader2 className="animate-spin mr-2" size={18} /> Checking session...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#121417]">
+        <FontImports />
+        <LoginScreen />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -123,7 +152,7 @@ export default function TyreBillingSystem() {
           Supabase is not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY). Data will not be saved or synced until this is fixed.
         </div>
       )}
-      <Sidebar tab={tab} setTab={setTab} shopName={settings.name} />
+      <Sidebar tab={tab} setTab={setTab} shopName={settings.name} userEmail={session.user?.email} />
       <main className="flex-1 min-w-0">
         {tab === "invoice" && (
           <InvoiceScreen
@@ -159,8 +188,59 @@ function FontImports() {
   );
 }
 
+/* ---------------- Login ---------------- */
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setBusy(false);
+    if (error) setError(error.message);
+  };
+
+  return (
+    <form onSubmit={submit} className="w-full max-w-sm bg-[#181B1F] border border-white/5 rounded-lg p-8">
+      <div className="flex items-center gap-2 mb-6">
+        <div className="w-9 h-9 rounded-full bg-[#FF6A1A] flex items-center justify-center shrink-0">
+          <Lock size={16} strokeWidth={2.5} className="text-[#121417]" />
+        </div>
+        <div>
+          <div className="font-display text-[15px] font-semibold text-white leading-tight">Shop Login</div>
+          <div className="text-[11px] text-white/40">Sign in to access billing</div>
+        </div>
+      </div>
+
+      <label className="block text-[11px] text-white/40 mb-1">Email</label>
+      <input
+        type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)}
+        className="w-full mb-4 px-3 py-2.5 rounded-md bg-white/[0.04] border border-white/10 text-sm text-white outline-none focus:border-[#FF6A1A]/60"
+      />
+
+      <label className="block text-[11px] text-white/40 mb-1">Password</label>
+      <input
+        type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+        className="w-full mb-5 px-3 py-2.5 rounded-md bg-white/[0.04] border border-white/10 text-sm text-white outline-none focus:border-[#FF6A1A]/60"
+      />
+
+      {error && <div className="mb-4 text-[12px] text-red-400">{error}</div>}
+
+      <button type="submit" disabled={busy}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-md bg-[#FF6A1A] text-[#121417] text-sm font-semibold disabled:opacity-60">
+        {busy && <Loader2 className="animate-spin" size={16} />}
+        Sign In
+      </button>
+    </form>
+  );
+}
+
 /* ---------------- Sidebar ---------------- */
-function Sidebar({ tab, setTab, shopName }) {
+function Sidebar({ tab, setTab, shopName, userEmail }) {
   const items = [
     { id: "invoice", label: "New Invoice", icon: Receipt },
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -199,9 +279,18 @@ function Sidebar({ tab, setTab, shopName }) {
         })}
       </nav>
       <div className="p-3 border-t border-white/5">
-        <div className="rounded-md bg-white/[0.03] px-3 py-2.5">
-          <div className="text-[11px] text-white/40">Logged in as</div>
-          <div className="text-sm font-medium text-white">Owner</div>
+        <div className="rounded-md bg-white/[0.03] px-3 py-2.5 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[11px] text-white/40">Logged in as</div>
+            <div className="text-sm font-medium text-white truncate">{userEmail || "Owner"}</div>
+          </div>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            title="Sign out"
+            className="shrink-0 p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/5"
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </div>
     </aside>

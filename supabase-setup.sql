@@ -10,16 +10,17 @@ create table if not exists app_data (
   updated_at timestamptz default now()
 );
 
--- Enable row-level security, then allow the app's public (anon) key to
--- read and write. This is fine for a single small shop's private tool
--- where only people with your app's URL will use it — just don't share
--- your Supabase URL/key publicly beyond that.
+-- Enable row-level security, then only allow logged-in (authenticated)
+-- users to read/write. The app now has a login screen backed by Supabase
+-- Auth, and this is what actually enforces it — without this policy,
+-- anyone with the public anon key could hit the API directly and bypass
+-- the login screen entirely.
 alter table app_data enable row level security;
 
-create policy "Allow all access for anon key"
+create policy "Allow access for authenticated users"
   on app_data
   for all
-  to anon
+  to authenticated
   using (true)
   with check (true);
 
